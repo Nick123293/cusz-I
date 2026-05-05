@@ -3,7 +3,8 @@ bin/cusz
 buildcusz
 buildhipsz
 builddpsz
-
+#build script
+build.sh
 *.sz
 *.szx
 *.cusza
