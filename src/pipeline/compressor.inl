@@ -41,6 +41,29 @@
 #define PSZ_HIST(...) psz::histogram<PROPER_GPU_BACKEND, E>(__VA_ARGS__);
 #endif
 
+template <class CodeT>
+static void dump_device_buffer_to_file(
+    CodeT const* dptr,
+    size_t n,
+    const std::string& path,
+    cudaStream_t stream)
+{
+    std::vector<CodeT> h(n);
+
+    cudaError_t st = cudaMemcpyAsync(
+        h.data(), dptr, n * sizeof(CodeT), cudaMemcpyDeviceToHost, stream);
+    if (st != cudaSuccess) throw std::runtime_error(cudaGetErrorString(st));
+
+    st = cudaStreamSynchronize(stream);
+    if (st != cudaSuccess) throw std::runtime_error(cudaGetErrorString(st));
+
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs) throw std::runtime_error("failed to open dump file: " + path);
+
+    ofs.write(reinterpret_cast<char const*>(h.data()), n * sizeof(CodeT));
+    if (!ofs) throw std::runtime_error("failed to write dump file: " + path);
+}
+
 namespace cusz {
 
 COR::destroy()
@@ -234,6 +257,16 @@ COR::compress(pszctx* ctx, T* in, BYTE** out, size_t* outlen, void* stream)
   PSZSANITIZE_PSZCTX(ctx);
 
   compress_predict(ctx, in, stream);
+  #ifdef PSZ_USE_CUDA
+    if (spline_in_use() && ctx->dump_qcodes) {
+      using CodeT = uint8_t; // verify locally
+      dump_device_buffer_to_file<CodeT>(
+        reinterpret_cast<CodeT const*>(mem->ectrl()),
+        len,
+        ctx->dump_qcodes_path,
+        static_cast<cudaStream_t>(stream));
+    }
+  #endif
   compress_histogram(ctx, stream);
   compress_encode(ctx, stream);
   compress_merge(ctx, stream);
